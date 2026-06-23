@@ -184,8 +184,11 @@ int main() {
     const DWORD integrity = current_process_integrity_rid();
     expect(integrity >= SECURITY_MANDATORY_LOW_RID, "current process integrity can be inspected");
     const auto launched = UnelevatedLauncher::launch_suspended(helper_path);
-    expect(launched.error.empty(), "safe launcher creates a helper process");
-    if (launched.process) {
+    const bool safe_launcher_available = launched.error.empty();
+    if (!safe_launcher_available) {
+        expect(integrity > SECURITY_MANDATORY_MEDIUM_RID,
+               "safe launcher may be unavailable when no medium-integrity shell token exists");
+    } else if (launched.process) {
         expect(process_integrity_rid(launched.process) <= SECURITY_MANDATORY_MEDIUM_RID,
                "safe launcher never creates an elevated target");
         TerminateProcess(launched.process, 0);
@@ -202,8 +205,13 @@ int main() {
     RuleEngine launch_engine;
     launch_engine.set_rules({launch_rule});
     const auto launch_result = launch_engine.launch_limited(launch_rule.id);
-    expect(launch_result.error.empty() && launch_result.pid != 0,
-           "engine launches, assigns, and resumes a limited process");
+    if (safe_launcher_available) {
+        expect(launch_result.error.empty() && launch_result.pid != 0,
+               "engine launches, assigns, and resumes a limited process");
+    } else {
+        expect(!launch_result.error.empty() && launch_result.pid == 0,
+               "engine reports when limited launch is unavailable");
+    }
     if (launch_result.pid) {
         const HANDLE limited = OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE, FALSE, launch_result.pid);
         if (limited) {

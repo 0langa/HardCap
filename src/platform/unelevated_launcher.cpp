@@ -99,6 +99,11 @@ SuspendedProcess UnelevatedLauncher::launch_suspended(const std::filesystem::pat
             result.error = L"Could not obtain the interactive shell token.";
             return result;
         }
+        if (token_integrity(token) > SECURITY_MANDATORY_MEDIUM_RID) {
+            CloseHandle(token);
+            result.error = L"Could not obtain a non-elevated interactive shell token.";
+            return result;
+        }
         void* environment = nullptr;
         CreateEnvironmentBlock(&environment, token, FALSE);
         created = CreateProcessWithTokenW(token, LOGON_WITH_PROFILE, executable.c_str(), command.data(),

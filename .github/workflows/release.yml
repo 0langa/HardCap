@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build GitHub release
+    runs-on: windows-2022
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake --preset windows-x64
+
+      - name: Build debug
+        run: cmake --build --preset debug
+
+      - name: Test
+        run: ctest --preset debug
+
+      - name: Build release
+        run: cmake --build --preset release
+
+      - name: Package artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path package
+          Copy-Item build/dist/HardCap.exe package/HardCap.exe
+          Compress-Archive -Path package/* -DestinationPath HardCap-windows-x64.zip -Force
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: HardCap-windows-x64.zip
+          generate_release_notes: true

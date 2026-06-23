@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  windows:
+    name: Windows build and test
+    runs-on: windows-2022
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake --preset windows-x64
+
+      - name: Build debug
+        run: cmake --build --preset debug
+
+      - name: Test
+        run: ctest --preset debug
+
+      - name: Build release
+        run: cmake --build --preset release
+
+      - name: Upload release binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HardCap-windows-x64
+          path: build/dist/HardCap.exe
+          if-no-files-found: error

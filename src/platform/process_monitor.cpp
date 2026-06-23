@@ -1,6 +1,7 @@
 #include "platform/process_monitor.h"
 
 #include "core/rule.h"
+#include "platform/win32_handle.h"
 
 #include <tlhelp32.h>
 #include <psapi.h>
@@ -92,8 +93,8 @@ void ProcessMonitor::stop_watching() {
 std::vector<ProcessInfo> ProcessMonitor::snapshot(const bool include_system_processes) {
     std::scoped_lock lock(mutex_);
     std::vector<ProcessInfo> result;
-    const HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (snapshot == INVALID_HANDLE_VALUE) return result;
+    UniqueHandle snapshot(CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0));
+    if (!snapshot) return result;
 
     DWORD current_session = 0;
     ProcessIdToSessionId(GetCurrentProcessId(), &current_session);
@@ -113,7 +114,7 @@ std::vector<ProcessInfo> ProcessMonitor::snapshot(const bool include_system_proc
             ProcessIdToSessionId(item.pid, &item.session_id);
             if (!include_system_processes && item.session_id != current_session) continue;
 
-            const HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, item.pid);
+            UniqueHandle process(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, item.pid));
             if (!process) {
                 item.block_reason = L"Access denied or protected process";
                 result.push_back(std::move(item));
@@ -122,12 +123,12 @@ std::vector<ProcessInfo> ProcessMonitor::snapshot(const bool include_system_proc
 
             wchar_t path[32768]{};
             DWORD path_length = static_cast<DWORD>(std::size(path));
-            if (QueryFullProcessImageNameW(process, 0, path, &path_length)) {
+            if (QueryFullProcessImageNameW(process.get(), 0, path, &path_length)) {
                 item.executable_path = normalize_executable_path(std::wstring(path, path_length));
             }
 
             FILETIME created{}, exited{}, kernel{}, user{};
-            if (GetProcessTimes(process, &created, &exited, &kernel, &user)) {
+            if (GetProcessTimes(process.get(), &created, &exited, &kernel, &user)) {
                 item.creation_time = file_time_value(created);
                 const std::uint64_t used = file_time_value(kernel) + file_time_value(user);
                 const auto key = process_identity(item.pid, item.creation_time);
@@ -142,21 +143,19 @@ std::vector<ProcessInfo> ProcessMonitor::snapshot(const bool include_system_proc
             }
 
             PROCESS_MEMORY_COUNTERS_EX memory{};
-            if (K32GetProcessMemoryInfo(process, reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&memory), sizeof(memory))) {
+            if (K32GetProcessMemoryInfo(process.get(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&memory), sizeof(memory))) {
                 item.memory_bytes = memory.PrivateUsage;
             }
 
             BOOL critical = FALSE;
-            if (IsProcessCritical(process, &critical)) item.critical = critical != FALSE;
+            if (IsProcessCritical(process.get(), &critical)) item.critical = critical != FALSE;
             item.controllable = item.pid != GetCurrentProcessId() && !item.critical && !item.executable_path.empty();
             if (item.pid == GetCurrentProcessId()) item.block_reason = L"HardCap cannot limit itself";
             else if (item.critical) item.block_reason = L"Critical Windows process";
             else if (item.executable_path.empty()) item.block_reason = L"Executable path is unavailable";
-            CloseHandle(process);
             result.push_back(std::move(item));
         } while (Process32NextW(snapshot, &entry));
     }
-    CloseHandle(snapshot);
 
     std::erase_if(cpu_samples_, [&seen](const auto& pair) { return !seen.contains(pair.first); });
     std::sort(result.begin(), result.end(), [](const ProcessInfo& left, const ProcessInfo& right) {

@@ -32,6 +32,21 @@ int main() {
     expect(validate_rule(valid, 8ULL * 1024 * 1024 * 1024).has_value() == false,
            "25 percent CPU rule is valid");
     expect(cpu_percent_to_rate(25) == 2500, "CPU rate uses hundredths of a percent");
+    expect(parse_cpu_percent_text(L"25").value_or(0) == 25, "CPU percent text parses");
+    expect(parse_memory_mib_text(L"768").value_or(0) == 768ULL * 1024 * 1024, "memory MiB text parses to bytes");
+
+    expect(!parse_cpu_percent_text(L"").has_value(), "empty CPU input is rejected");
+    expect(!parse_cpu_percent_text(L"0").has_value(), "zero CPU input is rejected");
+    expect(!parse_cpu_percent_text(L"101").has_value(), "CPU input above 100 is rejected");
+    expect(!parse_cpu_percent_text(L"25x").has_value(), "CPU input with trailing characters is rejected");
+    expect(!parse_cpu_percent_text(L" 25").has_value(), "CPU input with whitespace is rejected");
+    expect(!parse_cpu_percent_text(L"999999999999999999999999").has_value(), "overflowing CPU input is rejected");
+
+    expect(!parse_memory_mib_text(L"").has_value(), "empty memory input is rejected");
+    expect(parse_memory_mib_text(L"0").value_or(1) == 0, "zero memory input parses for validation");
+    expect(!parse_memory_mib_text(L"64x").has_value(), "memory input with trailing characters is rejected");
+    expect(!parse_memory_mib_text(L" 64").has_value(), "memory input with whitespace is rejected");
+    expect(!parse_memory_mib_text(L"18446744073709551616").has_value(), "overflowing memory input is rejected");
 
     Rule empty{};
     expect(validate_rule(empty, 8ULL * 1024 * 1024 * 1024).has_value(),
@@ -180,6 +195,16 @@ int main() {
     expect(assignments.at(L"outer").size() == 3, "outer matching rule owns its whole process tree");
     expect(assignments.find(L"inner") == assignments.end() || assignments.at(L"inner").empty(),
            "descendant rule yields to the outermost matching rule");
+
+    RuleEngine state_engine;
+    state_engine.set_rules({outer});
+    state_engine.reconcile({});
+    expect(state_engine.statuses().contains(L"outer"), "reconcile creates a rule status");
+    state_engine.set_paused(true);
+    expect(state_engine.statuses().at(L"outer").state == RuleState::paused,
+           "pausing immediately updates enabled rule status");
+    state_engine.set_rules({});
+    expect(state_engine.statuses().empty(), "removed rules also remove stale statuses");
 
     const DWORD integrity = current_process_integrity_rid();
     expect(integrity >= SECURITY_MANDATORY_LOW_RID, "current process integrity can be inspected");

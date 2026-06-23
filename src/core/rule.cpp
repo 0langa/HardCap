@@ -5,8 +5,24 @@
 
 #include <algorithm>
 #include <cwctype>
+#include <limits>
 
 namespace hardcap {
+namespace {
+
+std::optional<std::uint64_t> parse_unsigned_text(const std::wstring_view text, const std::uint64_t max_value) {
+    if (text.empty()) return std::nullopt;
+    std::uint64_t value = 0;
+    for (const wchar_t c : text) {
+        if (c < L'0' || c > L'9') return std::nullopt;
+        const auto digit = static_cast<std::uint64_t>(c - L'0');
+        if (value > (max_value - digit) / 10) return std::nullopt;
+        value = value * 10 + digit;
+    }
+    return value;
+}
+
+} // namespace
 
 std::optional<std::wstring> validate_rule(const Rule& rule, const std::uint64_t system_commit_limit) {
     if (!rule.cpu_enabled && !rule.memory_enabled) return L"Enable at least one limit.";
@@ -20,6 +36,19 @@ std::optional<std::wstring> validate_rule(const Rule& rule, const std::uint64_t 
         }
     }
     return std::nullopt;
+}
+
+std::optional<std::uint32_t> parse_cpu_percent_text(const std::wstring_view text) {
+    const auto parsed = parse_unsigned_text(text, 100);
+    if (!parsed || *parsed < 1 || *parsed > 100) return std::nullopt;
+    return static_cast<std::uint32_t>(*parsed);
+}
+
+std::optional<std::uint64_t> parse_memory_mib_text(const std::wstring_view text) {
+    constexpr std::uint64_t bytes_per_mib = 1024ULL * 1024ULL;
+    const auto parsed = parse_unsigned_text(text, std::numeric_limits<std::uint64_t>::max() / bytes_per_mib);
+    if (!parsed) return std::nullopt;
+    return *parsed * bytes_per_mib;
 }
 
 std::uint32_t cpu_percent_to_rate(const std::uint32_t percent) {

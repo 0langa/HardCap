@@ -1,5 +1,7 @@
 #pragma once
 
+#include "platform/win32_handle.h"
+
 #include <windows.h>
 
 #include <filesystem>
@@ -11,8 +13,8 @@ DWORD process_integrity_rid(HANDLE process);
 DWORD current_process_integrity_rid();
 
 struct SuspendedProcess {
-    HANDLE process{nullptr};
-    HANDLE thread{nullptr};
+    UniqueHandle process;
+    UniqueHandle thread;
     DWORD pid{0};
     std::wstring error;
 

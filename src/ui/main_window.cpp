@@ -526,28 +526,50 @@ void MainWindow::load_editor(const Rule* rule, const ProcessInfo* process) {
     SetWindowTextW(cpu_value_, std::to_wstring(rule ? rule->cpu_percent : 25).c_str());
     SetWindowTextW(memory_value_, std::to_wstring((rule ? rule->memory_bytes : 1024ULL * 1024 * 1024) / (1024 * 1024)).c_str());
     const bool available = !selected_path_.empty() && (!process || process->controllable);
+    EnableWindow(cpu_enabled_, available);
+    EnableWindow(cpu_value_, available);
+    EnableWindow(memory_enabled_, available);
+    EnableWindow(memory_value_, available);
     EnableWindow(save_button_, available);
-    EnableWindow(launch_button_, rule != nullptr);
-    EnableWindow(disable_button_, rule != nullptr);
-    EnableWindow(remove_button_, rule != nullptr);
+    EnableWindow(launch_button_, available && rule != nullptr);
+    EnableWindow(disable_button_, available && rule != nullptr);
+    EnableWindow(remove_button_, available && rule != nullptr);
     SetWindowTextW(disable_button_, rule && !rule->enabled ? L"Enable" : L"Disable");
     if (process && !process->controllable) set_status(process->block_reason, true);
+    else if (rule) {
+        const auto status = engine_.statuses().find(rule->id);
+        if (status != engine_.statuses().end()) {
+            std::wstring detail = status->second.detail;
+            if (status->second.assigned_processes != 0) {
+                detail += L" · ";
+                detail += std::to_wstring(status->second.assigned_processes);
+                detail += status->second.assigned_processes == 1 ? L" process assigned" : L" processes assigned";
+            }
+            set_status(detail, status->second.state == RuleState::blocked || status->second.state == RuleState::error);
+        } else {
+            set_status(L"Saved rule selected.");
+        }
+    }
 }
 
 void MainWindow::save_editor() {
     if (selected_path_.empty()) return;
-    wchar_t* end = nullptr;
-    const auto cpu = std::wcstoul(get_text(cpu_value_).c_str(), &end, 10);
-    const auto memory_mib = std::wcstoull(get_text(memory_value_).c_str(), &end, 10);
+    const bool cpu_enabled = Button_GetCheck(cpu_enabled_) == BST_CHECKED;
+    const bool memory_enabled = Button_GetCheck(memory_enabled_) == BST_CHECKED;
+    const auto cpu = cpu_enabled ? parse_cpu_percent_text(get_text(cpu_value_)) : std::optional<std::uint32_t>{25};
+    if (!cpu) { set_status(L"CPU must be a whole percent from 1 to 100.", true); return; }
+    const auto memory_bytes = memory_enabled ? parse_memory_mib_text(get_text(memory_value_)) :
+        std::optional<std::uint64_t>{1024ULL * 1024ULL * 1024ULL};
+    if (!memory_bytes) { set_status(L"Memory must be whole MiB within supported bounds.", true); return; }
     Rule edited{};
     edited.id = selected_rule_id_.empty() ? create_rule_id() : selected_rule_id_;
     edited.executable_path = normalize_executable_path(selected_path_);
     edited.display_name = selected_name_;
     edited.enabled = true;
-    edited.cpu_enabled = Button_GetCheck(cpu_enabled_) == BST_CHECKED;
-    edited.cpu_percent = cpu;
-    edited.memory_enabled = Button_GetCheck(memory_enabled_) == BST_CHECKED;
-    edited.memory_bytes = memory_mib * 1024ULL * 1024ULL;
+    edited.cpu_enabled = cpu_enabled;
+    edited.cpu_percent = *cpu;
+    edited.memory_enabled = memory_enabled;
+    edited.memory_bytes = *memory_bytes;
     if (const auto error = validate_rule(edited, system_commit_limit())) { set_status(*error, true); return; }
 
     auto rules = engine_.rules();

@@ -2,6 +2,7 @@
 
 #include "core/rule.h"
 #include "platform/unelevated_launcher.h"
+#include "platform/win32_handle.h"
 
 #include <algorithm>
 #include <set>
@@ -53,6 +54,7 @@ void RuleEngine::set_rules(std::vector<Rule> rules) {
     }
     std::set<std::wstring> current;
     for (const auto& rule : rules_) current.insert(rule.id);
+    std::erase_if(statuses_, [&current](const auto& pair) { return !current.contains(pair.first); });
     for (auto iterator = jobs_.begin(); iterator != jobs_.end();) {
         if (!current.contains(iterator->first)) {
             iterator->second->lift_limits();
@@ -69,9 +71,14 @@ void RuleEngine::reconcile(const std::vector<ProcessInfo>& processes) {
     for (const auto& rule : rules_) {
         auto& status = statuses_[rule.id];
         if (!rule.enabled || paused_) {
-            if (const auto existing = jobs_.find(rule.id); existing != jobs_.end()) existing->second->lift_limits();
-            status = {paused_ ? RuleState::paused : RuleState::inactive,
-                      paused_ ? L"Globally paused" : L"Rule disabled", 0};
+            if (const auto existing = jobs_.find(rule.id); existing != jobs_.end()) {
+                if (const auto error = existing->second->lift_limits()) {
+                    status = {RuleState::error, *error, existing->second->active_process_count()};
+                    continue;
+                }
+            }
+            status = {paused_ && rule.enabled ? RuleState::paused : RuleState::inactive,
+                      paused_ && rule.enabled ? L"Globally paused" : L"Rule disabled", 0};
             continue;
         }
         auto& job = jobs_[rule.id];
@@ -96,19 +103,18 @@ void RuleEngine::reconcile(const std::vector<ProcessInfo>& processes) {
                     last_error = L"PID " + std::to_wstring(pid) + L" was skipped: " + info->second->block_reason;
                     continue;
                 }
-                const HANDLE process = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE |
-                                                       PROCESS_QUERY_LIMITED_INFORMATION,
-                                                   FALSE, pid);
+                UniqueHandle process(OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE |
+                                                     PROCESS_QUERY_LIMITED_INFORMATION,
+                                                 FALSE, pid));
                 if (!process) { last_error = L"Access denied while opening PID " + std::to_wstring(pid); continue; }
                 BOOL already = FALSE;
-                if (IsProcessInJob(process, job->native_handle(), &already) && already) {
+                if (IsProcessInJob(process.get(), job->native_handle(), &already) && already) {
                     ++assigned;
-                } else if (const auto error = job->assign_process(process)) {
+                } else if (const auto error = job->assign_process(process.get())) {
                     last_error = *error;
                 } else {
                     ++assigned;
                 }
-                CloseHandle(process);
             }
         }
         while (const auto event = job->wait_for_event()) {
@@ -136,14 +142,14 @@ LaunchResult RuleEngine::launch_limited(const std::wstring& rule_id) {
 
     auto process = UnelevatedLauncher::launch_suspended(rule->executable_path);
     if (!process.error.empty()) return {0, process.error};
-    if (const auto error = job->assign_process(process.process)) {
-        TerminateProcess(process.process, ERROR_ACCESS_DENIED);
-        ResumeThread(process.thread);
+    if (const auto error = job->assign_process(process.process.get())) {
+        TerminateProcess(process.process.get(), ERROR_ACCESS_DENIED);
+        ResumeThread(process.thread.get());
         return {0, *error};
     }
-    if (ResumeThread(process.thread) == static_cast<DWORD>(-1)) {
+    if (ResumeThread(process.thread.get()) == static_cast<DWORD>(-1)) {
         const DWORD error = GetLastError();
-        TerminateProcess(process.process, error);
+        TerminateProcess(process.process.get(), error);
         return {0, L"Could not resume the limited application (Windows error " + std::to_wstring(error) + L")."};
     }
     statuses_[rule->id] = {RuleState::enforced, L"Hard limits active", 1};
@@ -154,8 +160,17 @@ void RuleEngine::set_paused(const bool paused) {
     paused_ = paused;
     if (paused_) {
         for (auto& [id, job] : jobs_) {
-            static_cast<void>(id);
-            job->lift_limits();
+            if (const auto error = job->lift_limits()) {
+                statuses_[id] = {RuleState::error, *error, job->active_process_count()};
+            }
+        }
+        for (const auto& rule : rules_) {
+            if (!rule.enabled) {
+                statuses_[rule.id] = {RuleState::inactive, L"Rule disabled", 0};
+            } else if (const auto status = statuses_.find(rule.id);
+                       status == statuses_.end() || status->second.state != RuleState::error) {
+                statuses_[rule.id] = {RuleState::paused, L"Globally paused", 0};
+            }
         }
     }
 }

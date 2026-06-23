@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   release:
     name: Build GitHub release
@@ -35,9 +39,13 @@ jobs:
           New-Item -ItemType Directory -Force -Path package
           Copy-Item build/dist/HardCap.exe package/HardCap.exe
           Compress-Archive -Path package/* -DestinationPath HardCap-windows-x64.zip -Force
+          $hash = Get-FileHash HardCap-windows-x64.zip -Algorithm SHA256
+          "$($hash.Hash.ToLowerInvariant())  HardCap-windows-x64.zip" | Set-Content -Encoding ascii SHA256SUMS.txt
 
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: HardCap-windows-x64.zip
+          files: |
+            HardCap-windows-x64.zip
+            SHA256SUMS.txt
           generate_release_notes: true

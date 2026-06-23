@@ -20,9 +20,9 @@ HardCap is a portable Windows 11 utility for applying hard CPU and committed-mem
 
 ## Download
 
-Release builds are published from GitHub Actions. Download the latest `HardCap.exe` from the [Releases](../../releases) page.
+Release builds are published from GitHub Actions. Download the latest `HardCap-windows-x64.zip` from the [Releases](../../releases) page and compare it with the published `SHA256SUMS.txt`.
 
-HardCap is currently unsigned. Windows SmartScreen may show a warning until the project has signing infrastructure and reputation.
+HardCap is currently unsigned. Windows SmartScreen may show a warning until the project has signing infrastructure and reputation. Checksums verify download integrity, not publisher identity.
 
 ## Use
 

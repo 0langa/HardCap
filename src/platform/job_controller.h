@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/rule.h"
+#include "platform/win32_handle.h"
 
 #include <windows.h>
 
@@ -24,8 +25,8 @@ public:
     JobController(JobController&& other) noexcept;
     JobController& operator=(JobController&& other) noexcept;
 
-    bool valid() const noexcept { return job_ != nullptr; }
-    HANDLE native_handle() const noexcept { return job_; }
+    bool valid() const noexcept { return job_.valid(); }
+    HANDLE native_handle() const noexcept { return job_.get(); }
     const std::wstring& name() const noexcept { return name_; }
 
     std::optional<std::wstring> apply_limits(const Rule& rule);
@@ -35,8 +36,8 @@ public:
     std::optional<JobEvent> wait_for_event(DWORD timeout_ms = 0) const;
 
 private:
-    HANDLE job_{nullptr};
-    HANDLE completion_port_{nullptr};
+    UniqueHandle job_;
+    UniqueHandle completion_port_;
     std::wstring name_;
 };
 

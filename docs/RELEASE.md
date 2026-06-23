@@ -31,8 +31,17 @@ For a release:
    git push origin main --tags
    ```
 
-The release workflow publishes `HardCap.exe` as a downloadable artifact.
+The release workflow publishes `HardCap-windows-x64.zip` and `SHA256SUMS.txt` as downloadable artifacts.
+
+Verify a downloaded release archive with:
+
+```powershell
+Get-FileHash .\HardCap-windows-x64.zip -Algorithm SHA256
+Get-Content .\SHA256SUMS.txt
+```
+
+The hash from `Get-FileHash` must match the hash listed in `SHA256SUMS.txt`.
 
 ## Signing
 
-HardCap is not currently code signed. Do not describe unsigned binaries as trusted or verified. Add signing to the release workflow before claiming publisher identity in release notes or docs.
+HardCap is not currently code signed. Checksums verify download integrity, not publisher identity. Do not describe unsigned binaries as trusted or verified. Add signing to the release workflow before claiming publisher identity in release notes or docs.

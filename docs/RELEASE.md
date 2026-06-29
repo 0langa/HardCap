@@ -7,7 +7,7 @@ HardCap releases are built by GitHub Actions from version tags.
 The project version is declared in `CMakeLists.txt`:
 
 ```cmake
-project(HardCap VERSION 0.1.0 LANGUAGES CXX RC)
+project(HardCap VERSION 0.3.0 LANGUAGES CXX RC)
 ```
 
 For a release:
@@ -27,7 +27,7 @@ For a release:
 5. Tag the commit:
 
    ```powershell
-   git tag v0.1.0
+   git tag -a v0.3.0 -m "HardCap v0.3.0"
    git push origin main --tags
    ```
 

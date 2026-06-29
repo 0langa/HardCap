@@ -46,6 +46,14 @@ std::map<std::wstring, std::vector<DWORD>> build_rule_assignments(
     return result;
 }
 
+std::uint32_t count_matching_processes(const std::wstring& executable_path, const std::vector<ProcessInfo>& processes) {
+    const std::wstring normalized = normalize_executable_path(executable_path);
+    if (normalized.empty()) return 0;
+    return static_cast<std::uint32_t>(std::count_if(processes.begin(), processes.end(), [&normalized](const ProcessInfo& process) {
+        return _wcsicmp(process.executable_path.c_str(), normalized.c_str()) == 0;
+    }));
+}
+
 void RuleEngine::set_rules(std::vector<Rule> rules) {
     rules_ = std::move(rules);
     for (auto& rule : rules_) {
@@ -111,7 +119,7 @@ void RuleEngine::reconcile(const std::vector<ProcessInfo>& processes) {
                 if (IsProcessInJob(process.get(), job->native_handle(), &already) && already) {
                     ++assigned;
                 } else if (const auto error = job->assign_process(process.get())) {
-                    last_error = *error;
+                    last_error = L"PID " + std::to_wstring(pid) + L": " + *error;
                 } else {
                     ++assigned;
                 }

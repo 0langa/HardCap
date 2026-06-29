@@ -6,7 +6,7 @@ HardCap is a small Win32 desktop app split into four layers.
 
 `src/app/main.cpp` owns process startup and single-instance behavior. `src/ui/` owns the main window, rule editor, process list, and notification-area menu.
 
-The UI keeps the current rule set in memory, saves it through `RuleRepository`, and asks `RuleEngine` to reconcile saved rules with the latest process snapshot.
+The UI keeps the current rule set in memory, saves it through `RuleRepository`, and asks `RuleEngine` to reconcile saved rules with the latest process snapshot. **Apps** rows are grouped process summaries and can create the same executable-path app group caps as **Running** and **Rules**.
 
 ## Core Rules
 
@@ -16,7 +16,7 @@ Rules are persisted as UTF-8 JSON in `%LOCALAPPDATA%\HardCap\settings.json`. The
 
 ## Engine
 
-`src/engine/rule_engine.*` maps rules to matching processes and owns active `JobController` instances. It assigns the outermost matching process tree to a single rule, applies CPU and memory ceilings, observes Job Object events, and lifts limits when rules are disabled, paused, removed, or the app exits.
+`src/engine/rule_engine.*` maps executable-path rules to matching processes and owns one active `JobController` per rule. It assigns the outermost matching process tree to the rule's Job Object, applies aggregate CPU and committed-memory ceilings, observes Job Object events, and lifts limits when rules are disabled, paused, removed, or the app exits. Attaching already-running processes is best-effort; full app group coverage depends on launching the executable inside the Job Object before its children start.
 
 ## Platform
 
@@ -28,4 +28,4 @@ Rules are persisted as UTF-8 JSON in `%LOCALAPPDATA%\HardCap\settings.json`. The
 
 ## Tests
 
-`tests/test_main.cpp` covers rule validation, persistence, Job Object enforcement, process snapshots, WMI watcher lifecycle, process-tree assignment, and unelevated launch behavior. `tests/ui_smoke_main.cpp` builds the UI surface as a smoke target.
+`tests/test_main.cpp` covers rule validation, persistence, app group rule updates, Job Object enforcement, process snapshots, WMI watcher lifecycle, process-tree assignment, launch readiness, partial assignment status, and unelevated launch behavior. `tests/ui_smoke_main.cpp` builds the UI surface as a smoke target.

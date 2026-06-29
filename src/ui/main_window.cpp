@@ -31,6 +31,7 @@ enum ControlId : int {
     id_search = 1001, id_running, id_apps, id_rules, id_browse, id_all, id_pause, id_list,
     id_cpu_enabled, id_cpu_value, id_memory_enabled, id_memory_value,
     id_save, id_launch, id_disable, id_remove,
+    id_all_label, id_cpu_enabled_label, id_memory_enabled_label,
 };
 
 bool system_uses_light_theme() {
@@ -103,6 +104,13 @@ const wchar_t* state_text(const RuleState state) {
     case RuleState::error: return L"Error";
     default: return L"Waiting";
     }
+}
+
+const Rule* find_rule_for_path(const std::vector<Rule>& rules, const std::wstring& executable_path) {
+    const auto found = std::find_if(rules.begin(), rules.end(), [&executable_path](const Rule& candidate) {
+        return _wcsicmp(candidate.executable_path.c_str(), executable_path.c_str()) == 0;
+    });
+    return found == rules.end() ? nullptr : &*found;
 }
 
 } // namespace
@@ -182,6 +190,7 @@ LRESULT MainWindow::handle_message(const UINT message, const WPARAM wparam, cons
     case WM_PAINT: paint(); return 0;
     case WM_ERASEBKGND: return 1;
     case WM_CTLCOLORSTATIC:
+    case WM_CTLCOLORBTN:
         SetBkMode(reinterpret_cast<HDC>(wparam), TRANSPARENT);
         SetTextColor(reinterpret_cast<HDC>(wparam), light_theme_ ? RGB(30, 30, 30) : RGB(238, 238, 238));
         return reinterpret_cast<LRESULT>(background_brush_);
@@ -197,6 +206,9 @@ LRESULT MainWindow::handle_message(const UINT message, const WPARAM wparam, cons
         else if (id == id_rules) { view_mode_ = ViewMode::Rules; selected_group_key_.clear(); update_list_columns(); populate_list(); }
         else if (id == id_browse) browse_executable();
         else if (id == id_all) refresh(true);
+        else if (id == id_all_label && notification == STN_CLICKED && IsWindowEnabled(all_processes_)) SendMessageW(all_processes_, BM_CLICK, 0, 0);
+        else if (id == id_cpu_enabled_label && notification == STN_CLICKED && IsWindowEnabled(cpu_enabled_)) SendMessageW(cpu_enabled_, BM_CLICK, 0, 0);
+        else if (id == id_memory_enabled_label && notification == STN_CLICKED && IsWindowEnabled(memory_enabled_)) SendMessageW(memory_enabled_, BM_CLICK, 0, 0);
         else if (id == id_pause || id == TrayController::command_pause) toggle_pause();
         else if (id == id_save) save_editor();
         else if (id == id_launch) launch_selected_rule();
@@ -259,7 +271,8 @@ void MainWindow::create_controls() {
     apps_button_ = make(L"BUTTON", L"Apps", BS_PUSHBUTTON, id_apps);
     rules_button_ = make(L"BUTTON", L"Rules", BS_PUSHBUTTON, id_rules);
     browse_button_ = make(L"BUTTON", L"Add executable…", BS_PUSHBUTTON, id_browse);
-    all_processes_ = make(L"BUTTON", L"All processes", BS_AUTOCHECKBOX, id_all);
+    all_processes_ = make(L"BUTTON", L"", BS_AUTOCHECKBOX, id_all);
+    all_processes_label_ = make(L"STATIC", L"All processes", SS_LEFT | SS_NOTIFY, id_all_label);
     pause_button_ = make(L"BUTTON", L"Pause all", BS_PUSHBUTTON, id_pause);
 
     list_ = CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"",
@@ -280,9 +293,11 @@ void MainWindow::create_controls() {
 
     selection_title_ = make(L"STATIC", L"Select an application", SS_LEFT, 0);
     selection_path_ = make(L"STATIC", L"Choose a process or saved rule to configure it.", SS_LEFT | SS_PATHELLIPSIS, 0);
-    cpu_enabled_ = make(L"BUTTON", L"CPU hard cap", BS_AUTOCHECKBOX, id_cpu_enabled);
+    cpu_enabled_ = make(L"BUTTON", L"", BS_AUTOCHECKBOX, id_cpu_enabled);
+    cpu_enabled_label_ = make(L"STATIC", L"CPU hard cap", SS_LEFT | SS_NOTIFY, id_cpu_enabled_label);
     cpu_value_ = make(L"EDIT", L"25", WS_BORDER | ES_NUMBER | ES_RIGHT, id_cpu_value);
-    memory_enabled_ = make(L"BUTTON", L"Memory hard cap", BS_AUTOCHECKBOX, id_memory_enabled);
+    memory_enabled_ = make(L"BUTTON", L"", BS_AUTOCHECKBOX, id_memory_enabled);
+    memory_enabled_label_ = make(L"STATIC", L"Memory hard cap", SS_LEFT | SS_NOTIFY, id_memory_enabled_label);
     memory_value_ = make(L"EDIT", L"1024", WS_BORDER | ES_NUMBER | ES_RIGHT, id_memory_value);
     save_button_ = make(L"BUTTON", L"Save && apply", BS_DEFPUSHBUTTON, id_save);
     launch_button_ = make(L"BUTTON", L"Launch limited", BS_PUSHBUTTON, id_launch);
@@ -313,7 +328,8 @@ void MainWindow::layout_controls(const int width, const int height) {
     MoveWindow(apps_button_, margin + 88, content_top + 8, 62, 30, TRUE);
     MoveWindow(rules_button_, margin + 156, content_top + 8, 72, 30, TRUE);
     MoveWindow(browse_button_, margin + 234, content_top + 8, 132, 30, TRUE);
-    MoveWindow(all_processes_, margin + 374, content_top + 10, 116, 26, TRUE);
+    MoveWindow(all_processes_, margin + 374, content_top + 13, 22, 22, TRUE);
+    MoveWindow(all_processes_label_, margin + 400, content_top + 10, 116, 26, TRUE);
     MoveWindow(search_, width - 390, 22, 250, 32, TRUE);
     MoveWindow(pause_button_, width - 128, 22, 110, 32, TRUE);
     MoveWindow(list_, left_x, left_y, left_width, left_height, TRUE);
@@ -321,7 +337,8 @@ void MainWindow::layout_controls(const int width, const int height) {
     int y = right_y + 14;
     MoveWindow(selection_title_, right_x + 14, y, right_width - 28, 28, TRUE); y += 30;
     MoveWindow(selection_path_, right_x + 14, y, right_width - 28, 38, TRUE); y += 52;
-    MoveWindow(cpu_enabled_, right_x + 14, y, 160, 28, TRUE);
+    MoveWindow(cpu_enabled_, right_x + 14, y + 3, 22, 22, TRUE);
+    MoveWindow(cpu_enabled_label_, right_x + 42, y + 4, 128, 24, TRUE);
     MoveWindow(cpu_value_, right_x + 180, y, 74, 28, TRUE);
     HWND cpu_suffix = GetDlgItem(window_, 9001);
     if (!cpu_suffix) {
@@ -330,7 +347,8 @@ void MainWindow::layout_controls(const int width, const int height) {
         SendMessageW(cpu_suffix, WM_SETFONT, reinterpret_cast<WPARAM>(font_), TRUE);
     }
     MoveWindow(cpu_suffix, right_x + 262, y + 4, 120, 24, TRUE); y += 44;
-    MoveWindow(memory_enabled_, right_x + 14, y, 160, 28, TRUE);
+    MoveWindow(memory_enabled_, right_x + 14, y + 3, 22, 22, TRUE);
+    MoveWindow(memory_enabled_label_, right_x + 42, y + 4, 128, 24, TRUE);
     MoveWindow(memory_value_, right_x + 180, y, 74, 28, TRUE);
     HWND memory_suffix = GetDlgItem(window_, 9002);
     if (!memory_suffix) {
@@ -439,15 +457,22 @@ void MainWindow::populate_list() {
             std::wstring count = std::to_wstring(group.process_count);
             std::wstring cpu = std::format(L"{:.1f}%", group.cpu_percent);
             std::wstring memory = std::format(L"{} MiB", group.memory_bytes / (1024 * 1024));
+            std::wstring state = group.state;
+            if (group.has_target_path) {
+                if (const Rule* rule = find_rule_for_path(engine_.rules(), group.executable_path)) {
+                    const auto status = engine_.statuses().find(rule->id);
+                    state = !rule->enabled ? L"Disabled" : status == engine_.statuses().end() ? L"Waiting" : state_text(status->second.state);
+                }
+            }
             rows.push_back(RowData{
                 .source_index = index,
                 .key = group.key,
-                .cells = {group.display_name, count, cpu, memory, group.state},
+                .cells = {group.display_name, count, cpu, memory, state},
                 .pid = group.process_count,
                 .creation_time = 0,
                 .cpu = group.cpu_percent,
                 .memory = group.memory_bytes,
-                .state = group.state,
+                .state = state,
             });
         }
     } else {
@@ -579,29 +604,66 @@ void MainWindow::drill_into_group(const int row) {
 }
 
 void MainWindow::load_group_editor(const ProcessGroup& group) {
-    selected_rule_id_.clear();
     selected_group_key_ = group.key;
-    selected_path_.clear();
     selected_name_ = group.display_name;
     selected_process_pid_ = 0;
     selected_process_creation_time_ = 0;
     SetWindowTextW(selection_title_, group.display_name.empty() ? L"Application group" : group.display_name.c_str());
     SetWindowTextW(selection_path_, group.executable_path.empty() ? L"Path unavailable" : group.executable_path.c_str());
-    Button_SetCheck(cpu_enabled_, BST_UNCHECKED);
-    Button_SetCheck(memory_enabled_, BST_UNCHECKED);
-    SetWindowTextW(cpu_value_, L"25");
-    SetWindowTextW(memory_value_, L"1024");
-    EnableWindow(cpu_enabled_, FALSE);
-    EnableWindow(cpu_value_, FALSE);
-    EnableWindow(memory_enabled_, FALSE);
-    EnableWindow(memory_value_, FALSE);
-    EnableWindow(save_button_, FALSE);
-    EnableWindow(launch_button_, FALSE);
-    EnableWindow(disable_button_, FALSE);
-    EnableWindow(remove_button_, FALSE);
-    std::wstring detail = std::format(L"{} processes · {} available · {} MiB committed · double-click to inspect a process",
-                                      group.process_count, group.available_count, group.memory_bytes / (1024 * 1024));
-    set_status(detail, group.available_count == 0);
+    if (!group.has_target_path || group.executable_path.empty()) {
+        selected_rule_id_.clear();
+        selected_path_.clear();
+        Button_SetCheck(cpu_enabled_, BST_UNCHECKED);
+        Button_SetCheck(memory_enabled_, BST_UNCHECKED);
+        SetWindowTextW(cpu_value_, L"25");
+        SetWindowTextW(memory_value_, L"1024");
+        EnableWindow(cpu_enabled_, FALSE);
+        EnableWindow(cpu_enabled_label_, FALSE);
+        EnableWindow(cpu_value_, FALSE);
+        EnableWindow(memory_enabled_, FALSE);
+        EnableWindow(memory_enabled_label_, FALSE);
+        EnableWindow(memory_value_, FALSE);
+        EnableWindow(save_button_, FALSE);
+        EnableWindow(launch_button_, FALSE);
+        EnableWindow(disable_button_, FALSE);
+        EnableWindow(remove_button_, FALSE);
+        set_status(L"This app group has no executable path, so HardCap cannot create a cap for it.", true);
+        return;
+    }
+
+    selected_path_ = group.executable_path;
+    const Rule* rule = find_rule_for_path(engine_.rules(), group.executable_path);
+    selected_rule_id_ = rule ? rule->id : L"";
+    Button_SetCheck(cpu_enabled_, rule && rule->cpu_enabled ? BST_CHECKED : BST_UNCHECKED);
+    Button_SetCheck(memory_enabled_, rule && rule->memory_enabled ? BST_CHECKED : BST_UNCHECKED);
+    SetWindowTextW(cpu_value_, std::to_wstring(rule ? rule->cpu_percent : 25).c_str());
+    SetWindowTextW(memory_value_, std::to_wstring((rule ? rule->memory_bytes : 1024ULL * 1024 * 1024) / (1024 * 1024)).c_str());
+    EnableWindow(cpu_enabled_, TRUE);
+    EnableWindow(cpu_enabled_label_, TRUE);
+    EnableWindow(cpu_value_, TRUE);
+    EnableWindow(memory_enabled_, TRUE);
+    EnableWindow(memory_enabled_label_, TRUE);
+    EnableWindow(memory_value_, TRUE);
+    EnableWindow(save_button_, TRUE);
+    EnableWindow(launch_button_, rule != nullptr);
+    EnableWindow(disable_button_, rule != nullptr);
+    EnableWindow(remove_button_, rule != nullptr);
+    SetWindowTextW(disable_button_, rule && !rule->enabled ? L"Enable" : L"Disable");
+    if (rule) {
+        const auto status = engine_.statuses().find(rule->id);
+        if (status != engine_.statuses().end()) {
+            std::wstring detail = L"App group cap: " + status->second.detail;
+            if (status->second.assigned_processes != 0) {
+                detail += L" · ";
+                detail += std::to_wstring(status->second.assigned_processes);
+                detail += status->second.assigned_processes == 1 ? L" process assigned" : L" processes assigned";
+            }
+            set_status(detail, rule_status_needs_attention(status->second.state));
+            return;
+        }
+    }
+    set_status(std::format(L"App group target: {} processes · {} MiB committed. Save & apply is best-effort; close the app and use Launch limited for full group caps.",
+                           group.process_count, group.memory_bytes / (1024 * 1024)));
 }
 
 void MainWindow::load_editor(const Rule* rule, const ProcessInfo* process) {
@@ -619,8 +681,10 @@ void MainWindow::load_editor(const Rule* rule, const ProcessInfo* process) {
     SetWindowTextW(memory_value_, std::to_wstring((rule ? rule->memory_bytes : 1024ULL * 1024 * 1024) / (1024 * 1024)).c_str());
     const bool available = !selected_path_.empty() && (!process || process->controllable);
     EnableWindow(cpu_enabled_, available);
+    EnableWindow(cpu_enabled_label_, available);
     EnableWindow(cpu_value_, available);
     EnableWindow(memory_enabled_, available);
+    EnableWindow(memory_enabled_label_, available);
     EnableWindow(memory_value_, available);
     EnableWindow(save_button_, available);
     EnableWindow(launch_button_, available && rule != nullptr);
@@ -637,7 +701,7 @@ void MainWindow::load_editor(const Rule* rule, const ProcessInfo* process) {
                 detail += std::to_wstring(status->second.assigned_processes);
                 detail += status->second.assigned_processes == 1 ? L" process assigned" : L" processes assigned";
             }
-            set_status(detail, status->second.state == RuleState::blocked || status->second.state == RuleState::error);
+            set_status(detail, rule_status_needs_attention(status->second.state));
         } else {
             set_status(L"Saved rule selected.");
         }
@@ -646,6 +710,7 @@ void MainWindow::load_editor(const Rule* rule, const ProcessInfo* process) {
 
 void MainWindow::save_editor() {
     if (selected_path_.empty()) return;
+    const bool selected_running_process = selected_process_pid_ != 0;
     const bool cpu_enabled = Button_GetCheck(cpu_enabled_) == BST_CHECKED;
     const bool memory_enabled = Button_GetCheck(memory_enabled_) == BST_CHECKED;
     const auto cpu = cpu_enabled ? parse_cpu_percent_text(get_text(cpu_value_)) : std::optional<std::uint32_t>{25};
@@ -665,16 +730,27 @@ void MainWindow::save_editor() {
     if (const auto error = validate_rule(edited, system_commit_limit())) { set_status(*error, true); return; }
 
     auto rules = engine_.rules();
-    const auto existing = std::find_if(rules.begin(), rules.end(), [&edited](const Rule& rule) {
-        return rule.id == edited.id || _wcsicmp(rule.executable_path.c_str(), edited.executable_path.c_str()) == 0;
-    });
-    if (existing == rules.end()) rules.push_back(edited); else *existing = edited;
+    selected_rule_id_ = upsert_rule_by_executable_path(rules, std::move(edited));
     if (const auto error = repository_.save(rules)) { set_status(*error, true); return; }
-    selected_rule_id_ = edited.id;
     engine_.set_rules(std::move(rules));
     engine_.reconcile(processes_);
-    set_status(L"Rule saved and applied.");
-    load_editor(&*std::find_if(engine_.rules().begin(), engine_.rules().end(), [this](const Rule& rule) { return rule.id == selected_rule_id_; }), nullptr);
+    if (!selected_running_process) {
+        view_mode_ = ViewMode::Rules;
+        update_list_columns();
+    }
+    const auto saved = std::find_if(engine_.rules().begin(), engine_.rules().end(), [this](const Rule& rule) { return rule.id == selected_rule_id_; });
+    load_editor(saved == engine_.rules().end() ? nullptr : &*saved, nullptr);
+    if (!selected_running_process && saved != engine_.rules().end()) {
+        const std::uint32_t matching = count_matching_processes(saved->executable_path, processes_);
+        if (matching == 0) {
+            set_status(L"Rule saved. Use Launch limited to start this app under caps.");
+        } else {
+            const auto status = engine_.statuses().find(saved->id);
+            set_status(std::format(L"Rule saved and applied best-effort to {} running process{}. Close the app before Launch limited for full group caps.",
+                                   matching, matching == 1 ? L"" : L"es"),
+                       status != engine_.statuses().end() && rule_status_needs_attention(status->second.state));
+        }
+    }
     populate_list();
 }
 
@@ -709,9 +785,23 @@ void MainWindow::toggle_selected_rule() {
 
 void MainWindow::launch_selected_rule() {
     if (selected_rule_id_.empty()) return;
+    refresh(true);
+    const auto rule = std::find_if(engine_.rules().begin(), engine_.rules().end(), [this](const Rule& candidate) {
+        return candidate.id == selected_rule_id_;
+    });
+    if (rule == engine_.rules().end()) return;
+    const std::uint32_t running = count_matching_processes(rule->executable_path, processes_);
+    if (running != 0) {
+        set_status(std::format(L"Close {} running matching process{} before Launch limited for a full app group cap.",
+                               running, running == 1 ? L"" : L"es"), true);
+        return;
+    }
     const auto result = engine_.launch_limited(selected_rule_id_);
     if (!result.error.empty()) set_status(result.error, true);
-    else set_status(L"Application launched at medium integrity with hard limits active.");
+    else {
+        refresh(true);
+        set_status(L"Application launched at medium integrity with hard limits active.");
+    }
 }
 
 void MainWindow::browse_executable() {
@@ -729,6 +819,9 @@ void MainWindow::browse_executable() {
         return _wcsicmp(candidate.executable_path.c_str(), selected_path_.c_str()) == 0;
     });
     load_editor(rule == engine_.rules().end() ? nullptr : &*rule, nullptr);
+    if (rule == engine_.rules().end()) {
+        set_status(L"Executable selected. Choose limits, then Save & apply. Launch limited is available after saving.");
+    }
 }
 
 void MainWindow::toggle_pause() {

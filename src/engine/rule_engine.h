@@ -18,6 +18,7 @@ struct LaunchResult {
 
 std::map<std::wstring, std::vector<DWORD>> build_rule_assignments(
     const std::vector<Rule>& rules, const std::vector<ProcessInfo>& processes);
+std::uint32_t count_matching_processes(const std::wstring& executable_path, const std::vector<ProcessInfo>& processes);
 
 class RuleEngine {
 public:

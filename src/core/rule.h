@@ -4,6 +4,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace hardcap {
 
@@ -39,6 +40,8 @@ constexpr std::uint64_t minimum_memory_limit = 16ULL * 1024 * 1024;
 std::optional<std::wstring> validate_rule(const Rule& rule, std::uint64_t system_commit_limit);
 std::optional<std::uint32_t> parse_cpu_percent_text(std::wstring_view text);
 std::optional<std::uint64_t> parse_memory_mib_text(std::wstring_view text);
+bool rule_status_needs_attention(RuleState state) noexcept;
+std::wstring upsert_rule_by_executable_path(std::vector<Rule>& rules, Rule edited);
 std::uint32_t cpu_percent_to_rate(std::uint32_t percent);
 std::wstring create_rule_id();
 std::wstring normalize_executable_path(const std::wstring& path);

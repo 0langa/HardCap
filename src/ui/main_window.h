@@ -81,13 +81,16 @@ private:
     HWND rules_button_{};
     HWND browse_button_{};
     HWND all_processes_{};
+    HWND all_processes_label_{};
     HWND pause_button_{};
     HWND list_{};
     HWND selection_title_{};
     HWND selection_path_{};
     HWND cpu_enabled_{};
+    HWND cpu_enabled_label_{};
     HWND cpu_value_{};
     HWND memory_enabled_{};
+    HWND memory_enabled_label_{};
     HWND memory_value_{};
     HWND save_button_{};
     HWND launch_button_{};

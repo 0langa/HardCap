@@ -62,6 +62,22 @@ int main() {
     expect(normalize_executable_path(L"C:/Apps/Test.EXE/") == L"c:\\apps\\test.exe",
            "executable paths are absolute, slash-normalized, and case-folded");
 
+    Rule existing_rule{};
+    existing_rule.id = L"existing";
+    existing_rule.executable_path = L"c:\\apps\\demo.exe";
+    existing_rule.display_name = L"Demo";
+    existing_rule.cpu_enabled = true;
+    existing_rule.cpu_percent = 20;
+    Rule edited_rule = existing_rule;
+    edited_rule.id = L"replacement";
+    edited_rule.executable_path = L"C:/Apps/Demo.exe";
+    edited_rule.cpu_percent = 40;
+    std::vector<Rule> upsert_rules{existing_rule};
+    const std::wstring upserted_id = upsert_rule_by_executable_path(upsert_rules, edited_rule);
+    expect(upserted_id == L"existing" && upsert_rules.size() == 1,
+           "saving the same executable updates an existing app group rule");
+    expect(upsert_rules[0].cpu_percent == 40, "updated app group rule keeps edited limits");
+
     const auto temp = std::filesystem::temp_directory_path() / L"hardcap-rule-test.json";
     Rule saved{};
     saved.id = L"rule-1";
@@ -196,6 +212,10 @@ int main() {
     expect(assignments.at(L"outer").size() == 3, "outer matching rule owns its whole process tree");
     expect(assignments.find(L"inner") == assignments.end() || assignments.at(L"inner").empty(),
            "descendant rule yields to the outermost matching rule");
+    expect(count_matching_processes(L"C:/Apps/Outer.exe", tree) == 1,
+           "launch readiness detects already-running matching executable processes");
+    expect(count_matching_processes(L"c:\\apps\\missing.exe", tree) == 0,
+           "launch readiness ignores unrelated process paths");
 
     std::vector<ProcessInfo> group_processes{
         {.pid = 20, .executable_path = L"c:\\apps\\alpha.exe", .display_name = L"alpha.exe",
@@ -232,6 +252,46 @@ int main() {
            "pausing immediately updates enabled rule status");
     state_engine.set_rules({});
     expect(state_engine.statuses().empty(), "removed rules also remove stale statuses");
+    expect(rule_status_needs_attention(RuleState::partially_enforced),
+           "partially enforced rules need visible attention");
+
+    PROCESS_INFORMATION partial_process{};
+    std::wstring partial_command = L"\"" + helper_path.wstring() + L"\" spin";
+    const BOOL partial_created = CreateProcessW(helper_path.c_str(), partial_command.data(), nullptr, nullptr, FALSE,
+                                                CREATE_SUSPENDED, nullptr, helper_path.parent_path().c_str(),
+                                                &startup, &partial_process);
+    expect(partial_created == TRUE, "partial assignment helper starts suspended");
+    if (partial_created) {
+        Rule partial_rule{};
+        partial_rule.id = L"partial";
+        partial_rule.executable_path = normalize_executable_path(helper_path.wstring());
+        partial_rule.display_name = L"Partial helper";
+        partial_rule.cpu_enabled = true;
+        partial_rule.cpu_percent = 50;
+        RuleEngine partial_engine;
+        partial_engine.set_rules({partial_rule});
+        partial_engine.reconcile({
+            {.pid = partial_process.dwProcessId, .executable_path = partial_rule.executable_path,
+             .display_name = L"hardcap_test_helper.exe", .controllable = true},
+            {.pid = 424242, .executable_path = partial_rule.executable_path,
+             .display_name = L"hardcap_test_helper.exe", .controllable = false,
+             .block_reason = L"Test process is unavailable"},
+        });
+        const auto partial_status = partial_engine.statuses().find(partial_rule.id);
+        expect(partial_status != partial_engine.statuses().end(), "partial assignment creates a status");
+        if (partial_status != partial_engine.statuses().end()) {
+            expect(partial_status->second.state == RuleState::partially_enforced,
+                   "one assigned process plus one skipped process is partial");
+            expect(partial_status->second.assigned_processes == 1, "partial status reports assigned process count");
+            expect(partial_status->second.detail.find(L"PID 424242") != std::wstring::npos,
+                   "partial status identifies the process that failed assignment");
+        }
+        partial_engine.shutdown();
+        TerminateProcess(partial_process.hProcess, 0);
+        WaitForSingleObject(partial_process.hProcess, 5000);
+        CloseHandle(partial_process.hThread);
+        CloseHandle(partial_process.hProcess);
+    }
 
     const DWORD integrity = current_process_integrity_rid();
     expect(integrity >= SECURITY_MANDATORY_LOW_RID, "current process integrity can be inspected");

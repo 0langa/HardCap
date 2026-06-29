@@ -5,8 +5,9 @@ HardCap is a portable Windows 11 utility for applying hard CPU and committed-mem
 ## Highlights
 
 - Apply CPU hard caps from 1% to 100% of total machine capacity.
-- Apply aggregate committed-memory ceilings to a process tree.
-- Attach limits to already-running processes, or launch an app directly into a limited Job Object.
+- Apply aggregate committed-memory ceilings to an app group/process tree.
+- Save app group caps from running processes, Apps rows, or manually selected executables.
+- Attach limits to already-running processes on a best-effort basis, or launch an app directly into a limited Job Object for full group coverage.
 - Save per-executable rules and automatically reapply them to future process starts.
 - Pause, resume, and remove all active limits from the notification area.
 - Ships as a portable executable with a statically linked Visual C++ runtime.
@@ -27,14 +28,14 @@ HardCap is currently unsigned. Windows SmartScreen may show a warning until the 
 ## Use
 
 1. Run `HardCap.exe` and accept the administrator prompt.
-2. Select a running process, or choose **Add executable...** to create a rule for an app that is not running yet.
+2. Select a running process, an **Apps** group with an executable path, or choose **Add executable...** for an app that is not running yet.
 3. Enable **CPU hard cap**, **Memory hard cap**, or both.
 4. Enter the ceiling and choose **Save & apply**.
 5. Leave HardCap running in the notification area so saved rules can be applied to future process starts.
 
 CPU values are percentages of total machine capacity. For example, `25` means one quarter of the whole computer, not one quarter of a single core.
 
-Memory values are aggregate committed-memory ceilings for the matching process and descendants. Reaching a memory ceiling can make the limited app fail allocations or exit.
+Memory values are aggregate committed-memory ceilings for the matching executable's Job Object. For apps with many child processes, use **Launch limited** from a clean start for full app group coverage. Reaching a memory ceiling can make the limited app fail allocations or exit.
 
 Closing the main window minimizes HardCap to the notification area. Use **Exit and remove limits** from the tray menu to lift active caps before HardCap exits.
 
@@ -61,7 +62,7 @@ Invalid settings files are moved aside with an `.invalid-<timestamp>.json` suffi
 
 ## Safety Model
 
-HardCap cannot limit critical Windows processes, protected processes, inaccessible processes, or itself. Some applications may not behave gracefully when memory allocation is denied by a Job Object limit; start with conservative limits for important work.
+HardCap cannot limit critical Windows processes, protected processes, inaccessible processes, or itself. Some already-running app processes may already belong to another Windows Job Object, so attach can be partial; close the app and use **Launch limited** for the strongest app group cap. Some applications may not behave gracefully when memory allocation is denied by a Job Object limit; start with conservative limits for important work.
 
 HardCap only enforces limits while it is running. Exiting through **Exit and remove limits** lifts active caps first.
 

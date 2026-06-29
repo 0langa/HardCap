@@ -51,6 +51,26 @@ std::optional<std::uint64_t> parse_memory_mib_text(const std::wstring_view text)
     return *parsed * bytes_per_mib;
 }
 
+bool rule_status_needs_attention(const RuleState state) noexcept {
+    return state == RuleState::partially_enforced || state == RuleState::blocked || state == RuleState::error;
+}
+
+std::wstring upsert_rule_by_executable_path(std::vector<Rule>& rules, Rule edited) {
+    edited.executable_path = normalize_executable_path(edited.executable_path);
+    if (edited.id.empty()) edited.id = create_rule_id();
+    const auto existing = std::find_if(rules.begin(), rules.end(), [&edited](const Rule& rule) {
+        return rule.id == edited.id || _wcsicmp(rule.executable_path.c_str(), edited.executable_path.c_str()) == 0;
+    });
+    if (existing == rules.end()) {
+        const std::wstring id = edited.id;
+        rules.push_back(std::move(edited));
+        return id;
+    }
+    edited.id = existing->id;
+    *existing = std::move(edited);
+    return existing->id;
+}
+
 std::uint32_t cpu_percent_to_rate(const std::uint32_t percent) {
     return std::clamp(percent, 1U, 100U) * 100U;
 }

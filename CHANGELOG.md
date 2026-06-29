@@ -4,6 +4,18 @@ All notable changes to HardCap are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic versioning while it is pre-1.0.
 
+## [0.2.0] - 2026-06-29
+
+### Added
+
+- Task Manager-like Apps view with executable-path grouping, aggregate CPU, aggregate committed memory, process counts, and drill-in to the largest member process.
+- Release checksum publishing with `SHA256SUMS.txt` beside the Windows zip artifact.
+
+### Changed
+
+- Renamed process memory display to Committed to better explain Task Manager differences.
+- Hardened limit input parsing, rule pause/remove state handling, Win32 handle ownership, and release workflow permissions.
+
 ## [0.1.0] - 2026-06-23
 
 ### Added

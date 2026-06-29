@@ -4,6 +4,12 @@ All notable changes to HardCap are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic versioning while it is pre-1.0.
 
+## [0.3.1] - 2026-06-29
+
+### Changed
+
+- Disable Launch limited for disabled rules instead of allowing a click that only reports an enable-first error.
+
 ## [0.3.0] - 2026-06-29
 
 ### Added

@@ -645,7 +645,7 @@ void MainWindow::load_group_editor(const ProcessGroup& group) {
     EnableWindow(memory_enabled_label_, TRUE);
     EnableWindow(memory_value_, TRUE);
     EnableWindow(save_button_, TRUE);
-    EnableWindow(launch_button_, rule != nullptr);
+    EnableWindow(launch_button_, rule != nullptr && rule->enabled);
     EnableWindow(disable_button_, rule != nullptr);
     EnableWindow(remove_button_, rule != nullptr);
     SetWindowTextW(disable_button_, rule && !rule->enabled ? L"Enable" : L"Disable");
@@ -687,7 +687,7 @@ void MainWindow::load_editor(const Rule* rule, const ProcessInfo* process) {
     EnableWindow(memory_enabled_label_, available);
     EnableWindow(memory_value_, available);
     EnableWindow(save_button_, available);
-    EnableWindow(launch_button_, available && rule != nullptr);
+    EnableWindow(launch_button_, available && rule != nullptr && rule->enabled);
     EnableWindow(disable_button_, available && rule != nullptr);
     EnableWindow(remove_button_, available && rule != nullptr);
     SetWindowTextW(disable_button_, rule && !rule->enabled ? L"Enable" : L"Disable");

@@ -1,5 +1,6 @@
 #include "core/rule.h"
 #include "core/rule_repository.h"
+#include "engine/process_groups.h"
 #include "platform/job_controller.h"
 #include "platform/process_monitor.h"
 #include "engine/rule_engine.h"
@@ -195,6 +196,32 @@ int main() {
     expect(assignments.at(L"outer").size() == 3, "outer matching rule owns its whole process tree");
     expect(assignments.find(L"inner") == assignments.end() || assignments.at(L"inner").empty(),
            "descendant rule yields to the outermost matching rule");
+
+    std::vector<ProcessInfo> group_processes{
+        {.pid = 20, .executable_path = L"c:\\apps\\alpha.exe", .display_name = L"alpha.exe",
+         .cpu_percent = 1.5, .memory_bytes = 100, .controllable = true},
+        {.pid = 21, .executable_path = L"c:\\apps\\alpha.exe", .display_name = L"alpha helper",
+         .cpu_percent = 2.0, .memory_bytes = 400, .controllable = false},
+        {.pid = 22, .executable_path = L"c:\\apps\\beta.exe", .display_name = L"beta.exe",
+         .cpu_percent = 0.25, .memory_bytes = 50, .controllable = true},
+        {.pid = 23, .display_name = L"mystery.exe", .cpu_percent = 3.0, .memory_bytes = 75, .controllable = false},
+    };
+    const auto groups = build_process_groups(group_processes);
+    const auto alpha = std::find_if(groups.begin(), groups.end(), [](const ProcessGroup& group) {
+        return group.executable_path == L"c:\\apps\\alpha.exe";
+    });
+    expect(alpha != groups.end(), "same executable path groups into one app row");
+    if (alpha != groups.end()) {
+        expect(alpha->process_count == 2 && alpha->available_count == 1, "group counts total and available processes");
+        expect(alpha->cpu_percent == 3.5 && alpha->memory_bytes == 500, "group aggregates CPU and committed memory");
+        expect(alpha->state == L"Partial", "mixed controllability produces partial group state");
+        expect(alpha->largest_memory_process_index == 1, "largest-memory member is drill-in target");
+    }
+    const auto mystery = std::find_if(groups.begin(), groups.end(), [](const ProcessGroup& group) {
+        return group.display_name == L"mystery.exe";
+    });
+    expect(mystery != groups.end() && !mystery->has_target_path && mystery->state == L"Path unavailable",
+           "pathless processes group by display name and cannot become cap targets");
 
     RuleEngine state_engine;
     state_engine.set_rules({outer});

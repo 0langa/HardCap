@@ -28,7 +28,7 @@ constexpr int header_height = 76;
 constexpr int margin = 18;
 
 enum ControlId : int {
-    id_search = 1001, id_running, id_rules, id_browse, id_all, id_pause, id_list,
+    id_search = 1001, id_running, id_apps, id_rules, id_browse, id_all, id_pause, id_list,
     id_cpu_enabled, id_cpu_value, id_memory_enabled, id_memory_value,
     id_save, id_launch, id_disable, id_remove,
 };
@@ -192,8 +192,9 @@ LRESULT MainWindow::handle_message(const UINT message, const WPARAM wparam, cons
         const int id = LOWORD(wparam);
         const int notification = HIWORD(wparam);
         if (id == id_search && notification == EN_CHANGE) populate_list();
-        else if (id == id_running) { rules_mode_ = false; update_list_columns(); populate_list(); }
-        else if (id == id_rules) { rules_mode_ = true; update_list_columns(); populate_list(); }
+        else if (id == id_running) { view_mode_ = ViewMode::Processes; selected_group_key_.clear(); update_list_columns(); populate_list(); }
+        else if (id == id_apps) { view_mode_ = ViewMode::Apps; update_list_columns(); populate_list(); }
+        else if (id == id_rules) { view_mode_ = ViewMode::Rules; selected_group_key_.clear(); update_list_columns(); populate_list(); }
         else if (id == id_browse) browse_executable();
         else if (id == id_all) refresh(true);
         else if (id == id_pause || id == TrayController::command_pause) toggle_pause();
@@ -213,6 +214,9 @@ LRESULT MainWindow::handle_message(const UINT message, const WPARAM wparam, cons
         } else if (header->idFrom == id_list && header->code == LVN_COLUMNCLICK) {
             const auto* click = reinterpret_cast<NMLISTVIEW*>(lparam);
             handle_column_click(click->iSubItem);
+        } else if (header->idFrom == id_list && header->code == NM_DBLCLK) {
+            const auto* activate = reinterpret_cast<NMITEMACTIVATE*>(lparam);
+            if (view_mode_ == ViewMode::Apps && activate->iItem >= 0) drill_into_group(activate->iItem);
         }
         return 0;
     }
@@ -250,8 +254,9 @@ void MainWindow::create_controls() {
         return control;
     };
     search_ = make(L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL, id_search);
-    SendMessageW(search_, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"Search processes and rules"));
+    SendMessageW(search_, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"Search processes, apps, and rules"));
     running_button_ = make(L"BUTTON", L"Running", BS_PUSHBUTTON, id_running);
+    apps_button_ = make(L"BUTTON", L"Apps", BS_PUSHBUTTON, id_apps);
     rules_button_ = make(L"BUTTON", L"Rules", BS_PUSHBUTTON, id_rules);
     browse_button_ = make(L"BUTTON", L"Add executable…", BS_PUSHBUTTON, id_browse);
     all_processes_ = make(L"BUTTON", L"All processes", BS_AUTOCHECKBOX, id_all);
@@ -269,7 +274,7 @@ void MainWindow::create_controls() {
     set_list_column(list_, 0, L"Application", 210);
     set_list_column(list_, 1, L"PID", 75);
     set_list_column(list_, 2, L"CPU", 75);
-    set_list_column(list_, 3, L"Memory", 100);
+    set_list_column(list_, 3, L"Committed", 100);
     set_list_column(list_, 4, L"State", 110);
     update_list_columns();
 
@@ -305,9 +310,10 @@ void MainWindow::layout_controls(const int width, const int height) {
     const int right_width = wide ? width - right_x - margin : width - margin * 2;
 
     MoveWindow(running_button_, margin, content_top + 8, 82, 30, TRUE);
-    MoveWindow(rules_button_, margin + 88, content_top + 8, 72, 30, TRUE);
-    MoveWindow(browse_button_, margin + 166, content_top + 8, 132, 30, TRUE);
-    MoveWindow(all_processes_, margin + 306, content_top + 10, 116, 26, TRUE);
+    MoveWindow(apps_button_, margin + 88, content_top + 8, 62, 30, TRUE);
+    MoveWindow(rules_button_, margin + 156, content_top + 8, 72, 30, TRUE);
+    MoveWindow(browse_button_, margin + 234, content_top + 8, 132, 30, TRUE);
+    MoveWindow(all_processes_, margin + 374, content_top + 10, 116, 26, TRUE);
     MoveWindow(search_, width - 390, 22, 250, 32, TRUE);
     MoveWindow(pause_button_, width - 128, 22, 110, 32, TRUE);
     MoveWindow(list_, left_x, left_y, left_width, left_height, TRUE);
@@ -345,23 +351,30 @@ void MainWindow::refresh(const bool rescan) {
     if (rescan) {
         const bool include_system = Button_GetCheck(all_processes_) == BST_CHECKED;
         processes_ = monitor_.snapshot(include_system);
+        process_groups_ = build_process_groups(processes_);
         engine_.reconcile(processes_);
     }
     populate_list();
 }
 
 void MainWindow::update_list_columns() {
-    if (rules_mode_) {
+    if (view_mode_ == ViewMode::Rules) {
         set_list_column(list_, 0, sorted_title(L"Application", 0, sort_column_, sort_ascending_), 210);
         set_list_column(list_, 1, sorted_title(L"Target", 1, sort_column_, sort_ascending_), 65);
         set_list_column(list_, 2, sorted_title(L"CPU cap", 2, sort_column_, sort_ascending_), 80);
         set_list_column(list_, 3, sorted_title(L"Memory cap", 3, sort_column_, sort_ascending_), 105);
         set_list_column(list_, 4, sorted_title(L"State", 4, sort_column_, sort_ascending_), 110);
+    } else if (view_mode_ == ViewMode::Apps) {
+        set_list_column(list_, 0, sorted_title(L"Application", 0, sort_column_, sort_ascending_), 210);
+        set_list_column(list_, 1, sorted_title(L"Processes", 1, sort_column_, sort_ascending_), 90);
+        set_list_column(list_, 2, sorted_title(L"CPU", 2, sort_column_, sort_ascending_), 75);
+        set_list_column(list_, 3, sorted_title(L"Committed", 3, sort_column_, sort_ascending_), 105);
+        set_list_column(list_, 4, sorted_title(L"State", 4, sort_column_, sort_ascending_), 110);
     } else {
         set_list_column(list_, 0, sorted_title(L"Application", 0, sort_column_, sort_ascending_), 210);
         set_list_column(list_, 1, sorted_title(L"PID", 1, sort_column_, sort_ascending_), 75);
         set_list_column(list_, 2, sorted_title(L"CPU", 2, sort_column_, sort_ascending_), 75);
-        set_list_column(list_, 3, sorted_title(L"Memory", 3, sort_column_, sort_ascending_), 100);
+        set_list_column(list_, 3, sorted_title(L"Committed", 3, sort_column_, sort_ascending_), 105);
         set_list_column(list_, 4, sorted_title(L"State", 4, sort_column_, sort_ascending_), 110);
     }
 }
@@ -381,7 +394,8 @@ void MainWindow::handle_column_click(const int column) {
 void MainWindow::populate_list() {
     if (!list_) return;
     const std::wstring query = lower(get_text(search_));
-    const std::wstring selected_key = rules_mode_ ? selected_rule_id_ : selected_path_;
+    const std::wstring selected_key = view_mode_ == ViewMode::Rules ? selected_rule_id_ :
+        view_mode_ == ViewMode::Apps ? selected_group_key_ : selected_path_;
     const DWORD selected_pid = selected_process_pid_;
     const std::uint64_t selected_creation_time = selected_process_creation_time_;
     visible_rows_.clear();
@@ -398,7 +412,7 @@ void MainWindow::populate_list() {
     };
     std::vector<RowData> rows;
 
-    if (rules_mode_) {
+    if (view_mode_ == ViewMode::Rules) {
         const auto& rules = engine_.rules();
         for (size_t index = 0; index < rules.size(); ++index) {
             const auto& rule = rules[index];
@@ -416,6 +430,24 @@ void MainWindow::populate_list() {
                 .cpu = rule.cpu_enabled ? static_cast<double>(rule.cpu_percent) : -1.0,
                 .memory = rule.memory_enabled ? rule.memory_bytes : 0,
                 .state = status,
+            });
+        }
+    } else if (view_mode_ == ViewMode::Apps) {
+        for (size_t index = 0; index < process_groups_.size(); ++index) {
+            const auto& group = process_groups_[index];
+            if (!query.empty() && lower(group.display_name + L" " + group.executable_path).find(query) == std::wstring::npos) continue;
+            std::wstring count = std::to_wstring(group.process_count);
+            std::wstring cpu = std::format(L"{:.1f}%", group.cpu_percent);
+            std::wstring memory = std::format(L"{} MiB", group.memory_bytes / (1024 * 1024));
+            rows.push_back(RowData{
+                .source_index = index,
+                .key = group.key,
+                .cells = {group.display_name, count, cpu, memory, group.state},
+                .pid = group.process_count,
+                .creation_time = 0,
+                .cpu = group.cpu_percent,
+                .memory = group.memory_bytes,
+                .state = group.state,
             });
         }
     } else {
@@ -443,7 +475,7 @@ void MainWindow::populate_list() {
         int result = 0;
         switch (sort_column_) {
         case 1:
-            result = rules_mode_ ? compare_text(left.cells[1], right.cells[1]) : compare_value(left.pid, right.pid);
+            result = view_mode_ == ViewMode::Rules ? compare_text(left.cells[1], right.cells[1]) : compare_value(left.pid, right.pid);
             break;
         case 2: result = compare_value(left.cpu, right.cpu); break;
         case 3: result = compare_value(left.memory, right.memory); break;
@@ -477,7 +509,9 @@ void MainWindow::populate_list() {
         for (int column = 1; column < 5; ++column) {
             ListView_SetItemText(list_, row, column, const_cast<wchar_t*>(data.cells[static_cast<size_t>(column)].c_str()));
         }
-        if (rules_mode_) {
+        if (view_mode_ == ViewMode::Rules) {
+            if (!selected_key.empty() && data.key == selected_key) selected_row = row;
+        } else if (view_mode_ == ViewMode::Apps) {
             if (!selected_key.empty() && data.key == selected_key) selected_row = row;
         } else if (selected_pid != 0 && data.pid == selected_pid && data.creation_time == selected_creation_time) {
             selected_row = row;
@@ -499,10 +533,13 @@ void MainWindow::select_row(const int row) {
     item.iItem = row;
     if (!ListView_GetItem(list_, &item)) return;
     const size_t index = static_cast<size_t>(item.lParam);
-    if (rules_mode_) {
+    if (view_mode_ == ViewMode::Rules) {
         if (index >= engine_.rules().size()) return;
         const Rule& rule = engine_.rules()[index];
         load_editor(&rule, nullptr);
+    } else if (view_mode_ == ViewMode::Apps) {
+        if (index >= process_groups_.size()) return;
+        load_group_editor(process_groups_[index]);
     } else {
         if (index >= processes_.size()) return;
         const ProcessInfo& process = processes_[index];
@@ -513,8 +550,63 @@ void MainWindow::select_row(const int row) {
     }
 }
 
+void MainWindow::drill_into_group(const int row) {
+    LVITEMW item{};
+    item.mask = LVIF_PARAM;
+    item.iItem = row;
+    if (!ListView_GetItem(list_, &item)) return;
+    const size_t index = static_cast<size_t>(item.lParam);
+    if (index >= process_groups_.size()) return;
+    const ProcessGroup& group = process_groups_[index];
+    if (group.largest_memory_process_index >= processes_.size()) return;
+    const ProcessInfo& process = processes_[group.largest_memory_process_index];
+    view_mode_ = ViewMode::Processes;
+    selected_group_key_.clear();
+    selected_process_pid_ = process.pid;
+    selected_process_creation_time_ = process.creation_time;
+    selected_path_ = process.executable_path;
+    selected_name_ = process.display_name;
+    const std::wstring filter = group.has_target_path
+        ? std::filesystem::path(group.executable_path).filename().wstring()
+        : group.display_name;
+    SetWindowTextW(search_, filter.c_str());
+    update_list_columns();
+    const auto rule = std::find_if(engine_.rules().begin(), engine_.rules().end(), [&process](const Rule& candidate) {
+        return _wcsicmp(candidate.executable_path.c_str(), process.executable_path.c_str()) == 0;
+    });
+    load_editor(rule == engine_.rules().end() ? nullptr : &*rule, &process);
+    populate_list();
+}
+
+void MainWindow::load_group_editor(const ProcessGroup& group) {
+    selected_rule_id_.clear();
+    selected_group_key_ = group.key;
+    selected_path_.clear();
+    selected_name_ = group.display_name;
+    selected_process_pid_ = 0;
+    selected_process_creation_time_ = 0;
+    SetWindowTextW(selection_title_, group.display_name.empty() ? L"Application group" : group.display_name.c_str());
+    SetWindowTextW(selection_path_, group.executable_path.empty() ? L"Path unavailable" : group.executable_path.c_str());
+    Button_SetCheck(cpu_enabled_, BST_UNCHECKED);
+    Button_SetCheck(memory_enabled_, BST_UNCHECKED);
+    SetWindowTextW(cpu_value_, L"25");
+    SetWindowTextW(memory_value_, L"1024");
+    EnableWindow(cpu_enabled_, FALSE);
+    EnableWindow(cpu_value_, FALSE);
+    EnableWindow(memory_enabled_, FALSE);
+    EnableWindow(memory_value_, FALSE);
+    EnableWindow(save_button_, FALSE);
+    EnableWindow(launch_button_, FALSE);
+    EnableWindow(disable_button_, FALSE);
+    EnableWindow(remove_button_, FALSE);
+    std::wstring detail = std::format(L"{} processes · {} available · {} MiB committed · double-click to inspect a process",
+                                      group.process_count, group.available_count, group.memory_bytes / (1024 * 1024));
+    set_status(detail, group.available_count == 0);
+}
+
 void MainWindow::load_editor(const Rule* rule, const ProcessInfo* process) {
     selected_rule_id_ = rule ? rule->id : L"";
+    selected_group_key_.clear();
     selected_path_ = rule ? rule->executable_path : process ? process->executable_path : L"";
     selected_name_ = rule ? rule->display_name : process ? process->display_name : L"";
     selected_process_pid_ = process ? process->pid : 0;

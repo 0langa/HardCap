@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/rule_repository.h"
+#include "engine/process_groups.h"
 #include "engine/rule_engine.h"
 #include "platform/process_monitor.h"
 #include "ui/tray_controller.h"
@@ -21,6 +22,8 @@ public:
     int run(int show_command);
 
 private:
+    enum class ViewMode { Processes, Apps, Rules };
+
     static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
     LRESULT handle_message(UINT message, WPARAM wparam, LPARAM lparam);
     bool create_window(int show_command);
@@ -31,7 +34,9 @@ private:
     void update_list_columns();
     void handle_column_click(int column);
     void select_row(int row);
+    void drill_into_group(int row);
     void load_editor(const Rule* rule, const ProcessInfo* process);
+    void load_group_editor(const ProcessGroup& group);
     void save_editor();
     void remove_selected_rule();
     void toggle_selected_rule();
@@ -54,14 +59,16 @@ private:
     ProcessMonitor monitor_;
     TrayController tray_;
     std::vector<ProcessInfo> processes_;
+    std::vector<ProcessGroup> process_groups_;
     std::vector<size_t> visible_rows_;
     int sort_column_{0};
     bool sort_ascending_{true};
     bool updating_list_{false};
-    bool rules_mode_{false};
+    ViewMode view_mode_{ViewMode::Processes};
     bool exiting_{false};
     bool light_theme_{true};
     std::wstring selected_rule_id_;
+    std::wstring selected_group_key_;
     std::wstring selected_path_;
     std::wstring selected_name_;
     DWORD selected_process_pid_{0};
@@ -70,6 +77,7 @@ private:
 
     HWND search_{};
     HWND running_button_{};
+    HWND apps_button_{};
     HWND rules_button_{};
     HWND browse_button_{};
     HWND all_processes_{};

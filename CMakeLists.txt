@@ -14,6 +14,7 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 add_library(hardcap_core STATIC
     src/core/rule.cpp
     src/core/rule_repository.cpp
+    src/engine/process_groups.cpp
     src/platform/job_controller.cpp
     src/platform/process_monitor.cpp
     src/platform/unelevated_launcher.cpp

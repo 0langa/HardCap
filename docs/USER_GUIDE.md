@@ -9,6 +9,10 @@
 
 Saved rules match by executable path. When a matching process or child process appears, HardCap assigns the process tree to the rule's Job Object.
 
+## Comparing Apps
+
+Use **Apps** to see Task Manager-style grouped totals for running processes that share an executable path. Apps rows are for comparison and navigation. Double-click an app row to jump to its largest committed-memory process in **Running**, then create or edit limits from that concrete process.
+
 ## Launching an App With Limits
 
 After saving a rule, choose **Launch limited** to start the selected executable directly inside its Job Object. HardCap launches the target without carrying HardCap's elevated integrity level into the child process.
